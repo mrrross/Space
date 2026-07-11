@@ -1,0 +1,36 @@
+name: Refresh UN satellite registrations
+
+on:
+  schedule:
+    - cron: "17 6 * * *"     # daily 06:17 UTC (odd minute avoids the top-of-hour rush)
+  workflow_dispatch: {}       # allows manual "Run workflow" button
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - run: python un_sat_registrations.py
+
+      - name: Commit if data changed
+        run: |
+          git add un_sat_registrations.tsv
+          # ignore runs where only the '# Updated' timestamp line changed
+          if git diff --cached un_sat_registrations.tsv | grep -E '^[+-][^+-]' | grep -v '^[+-]# Updated' | grep -q .; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -m "New registration documents $(date -u '+%Y %b %d')"
+            git push
+          else
+            echo "No new documents."
+          fi
