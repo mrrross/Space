@@ -62,6 +62,8 @@ seed configured, the script auto-discovers its range with an anchor sweep.
 
 ## Status
 
-Rewritten 2026 Jul 11 around live-verified endpoints. First live run found
-21 new ST/SG/SER.E documents (1290–1324). See PROJECT_MEMORY.md for
-background, findings, and next steps.
+Live since 2026 Jul 11, refreshing daily via GitHub Actions. Current
+coverage: 46 documents — ST/SG/SER.E 1290–1324 plus supplements (e.g.
+1295/Add.1), and A/AC.105/INF 400–424 (that series has been dormant
+since 2013). Unissued serial numbers in the known range and supplements
+on recent documents are re-checked on every run, in all six UN languages.
