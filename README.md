@@ -12,7 +12,7 @@ titles are pulled from each PDF's metadata.
 The UN Digital Library was evaluated and rejected as a source: its search
 export API is bot-blocked, its RSS feed ignores sorting and date filters,
 and its symbol index for this series is over a decade behind (verified
-2026 Jul 11 — details in PROJECT_MEMORY.md).
+2026 Jul 11 — details in the docstring of `un_sat_registrations.py`).
 
 ## Quick start
 
