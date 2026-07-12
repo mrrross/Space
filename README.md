@@ -29,9 +29,12 @@ written, so it records when each document was first detected — the
 "newly posted" signal.
 
 Each run also re-probes gaps in the already-known serial range (UNOOSA
-publishes out of order, so gaps fill in later), and each probe falls back
-through all six UN languages — documents sometimes appear in French,
-Russian, etc. before the English version.
+publishes out of order, so gaps fill in later), checks for /Add.N and
+/Corr.N supplements on the most recent documents (addenda register extra
+objects; corrigenda correct data — both can appear months after the base
+document), and each probe falls back through all six UN languages —
+documents sometimes appear in French, Russian, etc. before the English
+version.
 
 ## Options
 
@@ -41,6 +44,7 @@ Russian, etc. before the English version.
     --backfill 30                first-run backfill below a discovered frontier
     --delay 0.5                  seconds between requests
     --no-gap-recheck             skip re-probing known gaps
+    --supp-window 25             recent docs per series to check for Add/Corr
     -o FILE                      output path
 
 Series notes: ST/SG/SER.E uses '/' before the serial; A/AC.105/INF uses

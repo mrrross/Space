@@ -24,6 +24,9 @@ Strategy per series, each run:
      recorded (UNOOSA publishes out of order, so gaps fill in later).
   2. Scan UPWARD from one past the highest recorded serial (or a seed /
      auto-discovered frontier on first run) until --gap consecutive misses.
+  3. Check SUPPLEMENTS (/Add.N, /Corr.N) for the most recent --supp-window
+     base docs — addenda register extra objects and corrigenda fix orbital
+     data, and both can appear months after the base document.
 Date/title are pulled from each hit's PDF metadata. Existing rows keep
 their FirstSeen date, so the TSV is both deliverable and state: FirstSeen
 is the "newly posted" signal.
@@ -64,6 +67,8 @@ SERIES = {
 }
 
 COLS = ["UNReg", "Title", "PDFDate", "FirstSeen", "URL", "Source"]
+SUPP_TYPES = ["Add", "Corr"]        # supplement suffixes to probe (/Add.1 etc.)
+SUPP_ORDER = {None: 0, "Add": 1, "Corr": 2, "Rev": 3}   # sort order after base
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 MAX_PDF_BYTES = 3 * 1024 * 1024   # metadata lives near start/end; cap reads
@@ -220,6 +225,51 @@ def recheck_gaps(session, series, sep, known, delay, today, out):
         time.sleep(delay)
 
 
+def check_supplements(session, series, sep, existing, new_rows, args, today):
+    """Probe /Add.N and /Corr.N supplements for the most recent base docs.
+
+    Supplements (extra objects, corrections) can appear months after the
+    base document, so the last --supp-window base serials are re-checked
+    every run, continuing from the highest supplement number already known.
+    Confirmed format (2026 Jul 12): '<base>/Add.1' — case-sensitive.
+    """
+    symbols = set(existing) | {r["UNReg"] for r in new_rows}
+    bases, supps = [], {}
+    for sym in symbols:
+        s_sep, serial, supp = parse_symbol(sym, series)
+        if serial is None or s_sep != sep:
+            continue
+        if supp is None:
+            bases.append(serial)
+        else:
+            key = (serial, supp[0])
+            supps[key] = max(supps.get(key, 0), supp[1])
+    if not bases:
+        return
+    window = sorted(set(bases))[-args.supp_window:]
+    print(f"  checking supplements for {len(window)} recent docs "
+          f"({series}{sep}{window[0]} .. {series}{sep}{window[-1]})")
+    for n in window:
+        base = f"{series}{sep}{n}"
+        for typ in SUPP_TYPES:
+            k = supps.get((n, typ), 0) + 1
+            while True:
+                sym = f"{base}/{typ}.{k}"
+                hit, body, lang = probe(session, sym, want_body=True,
+                                        langs=LANGS)
+                if not hit:
+                    break
+                date, title = pdf_meta(body or b"")
+                new_rows.append({"UNReg": sym, "Title": title,
+                                 "PDFDate": date, "FirstSeen": today,
+                                 "URL": HUMAN_URL.format(lang=lang, symbol=sym),
+                                 "Source": "ods"})
+                print(f"  HIT  {sym}  [{lang}]  ({date or 'no date'})")
+                k += 1
+                time.sleep(args.delay)
+            time.sleep(args.delay)
+
+
 def read_existing(path):
     """Parse a previous TSV run. Returns {symbol: row_dict}."""
     out = {}
@@ -237,17 +287,23 @@ def read_existing(path):
 
 
 def parse_symbol(symbol, series):
-    """Return (sep, serial) if symbol belongs to series, else (None, None)."""
-    m = re.match(re.escape(series) + r"([/.])(\d+)$", symbol)
-    return (m.group(1), int(m.group(2))) if m else (None, None)
+    """Return (sep, serial, supp) if symbol belongs to series, else
+    (None, None, None). supp is e.g. ('Add', 1) for .../Add.1, else None."""
+    m = re.match(re.escape(series) + r"([/.])(\d+)(?:/(Add|Corr|Rev)\.(\d+))?$",
+                 symbol)
+    if not m:
+        return None, None, None
+    supp = (m.group(3), int(m.group(4))) if m.group(3) else None
+    return m.group(1), int(m.group(2)), supp
 
 
 def sort_key(row):
     for series in SERIES:
-        _, s = parse_symbol(row["UNReg"], series)
+        _, s, supp = parse_symbol(row["UNReg"], series)
         if s is not None:
-            return (series, s)
-    return (row["UNReg"], 0)
+            typ, k = supp if supp else (None, 0)
+            return (series, s, SUPP_ORDER.get(typ, 9), k)
+    return (row["UNReg"], 0, 0, 0)
 
 
 def main():
@@ -267,6 +323,9 @@ def main():
                     help="seconds between requests (default 0.5)")
     ap.add_argument("--no-gap-recheck", action="store_true",
                     help="skip re-probing gaps in the already-known range")
+    ap.add_argument("--supp-window", type=int, default=25,
+                    help="re-check Add/Corr supplements for this many of the "
+                         "most recent base docs per series (0 = skip)")
     ap.add_argument("-o", "--output", default="un_sat_registrations.tsv")
     args = ap.parse_args()
 
@@ -315,8 +374,8 @@ def run_all_series(session, existing, forced, new_rows, args, today):
         print(f"Probing {series} ...")
         known, sep = [], cfg["sep"]
         for symbol in existing:
-            s_sep, serial = parse_symbol(symbol, series)
-            if serial is not None:
+            s_sep, serial, supp = parse_symbol(symbol, series)
+            if serial is not None and supp is None:   # base docs only
                 known.append(serial)
                 sep = s_sep          # infer separator from recorded symbols
 
@@ -347,6 +406,10 @@ def run_all_series(session, existing, forced, new_rows, args, today):
         collect_upward(session, series, sep, start, args.gap,
                        args.max_scan, args.delay, today, new_rows,
                        min_until=min_until)
+
+        if args.supp_window > 0:
+            check_supplements(session, series, sep, existing, new_rows,
+                              args, today)
 
 
 if __name__ == "__main__":
